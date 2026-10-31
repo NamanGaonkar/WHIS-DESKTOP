@@ -354,6 +354,35 @@ export const KnowledgeGraph3D: Component<{
 
   let hoverNodeId: string | null = null
 
+  let cameraAnimation: {
+    startCamPos: Vector3
+    targetCamPos: Vector3
+    startControlsTarget: Vector3
+    targetControlsTarget: Vector3
+    startTime: number
+    duration: number
+  } | null = null
+
+  function flyToNode(nodeId: string, duration = 850) {
+    const pos = nodePositions.get(nodeId)
+    if (!pos || !camera || !controls) return
+
+    const currentDir = new Vector3().subVectors(camera.position, controls.target).normalize()
+    if (currentDir.lengthSq() < 0.001) currentDir.set(0, 0.2, 1).normalize()
+
+    const desiredDistance = 90
+    const targetCamPos = new Vector3().copy(pos).addScaledVector(currentDir, desiredDistance)
+
+    cameraAnimation = {
+      startCamPos: camera.position.clone(),
+      targetCamPos,
+      startControlsTarget: controls.target.clone(),
+      targetControlsTarget: pos.clone(),
+      startTime: performance.now(),
+      duration,
+    }
+  }
+
   onMount(() => {
     if (!containerRef) return
 
@@ -503,10 +532,37 @@ export const KnowledgeGraph3D: Component<{
       }
     }
 
-    // Reactively update highlight when props.selectedNodeId changes externally
+    // Reactively update highlight and smoothly fly camera when props.selectedNodeId changes
+    let lastFlownNodeId: string | null = null
     createEffect(() => {
       const active = props.selectedNodeId || null
       updateHighlight(active)
+      if (active && active !== lastFlownNodeId && nodePositions.has(active)) {
+        lastFlownNodeId = active
+        flyToNode(active, 800)
+      } else if (!active) {
+        lastFlownNodeId = null
+      }
+    })
+
+    // Reactively fly camera to matching node when user types in search
+    let lastSearchQuery = ""
+    createEffect(() => {
+      const q = (props.searchQuery || "").trim().toLowerCase()
+      if (!q || q === lastSearchQuery) {
+        lastSearchQuery = q
+        return
+      }
+      lastSearchQuery = q
+
+      for (const [id, node] of nodeDataMap.entries()) {
+        if (node.label.toLowerCase().includes(q) || node.path.toLowerCase().includes(q)) {
+          props.onSelectNode?.(node)
+          updateHighlight(id)
+          flyToNode(id, 850)
+          break
+        }
+      }
     })
 
     const onPointerMove = (e: MouseEvent) => {
@@ -542,6 +598,7 @@ export const KnowledgeGraph3D: Component<{
     const onPointerDown = (e: MouseEvent) => {
       downPointerX = e.clientX
       downPointerY = e.clientY
+      cameraAnimation = null // User took manual control
       if (containerRef) containerRef.style.cursor = "grabbing"
     }
 
@@ -575,6 +632,7 @@ export const KnowledgeGraph3D: Component<{
           } else {
             props.onSelectNode?.(nodeDataMap.get(nodeId)!)
             updateHighlight(nodeId)
+            flyToNode(nodeId, 750)
           }
         }
       } else {
@@ -593,8 +651,22 @@ export const KnowledgeGraph3D: Component<{
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate)
 
+      if (cameraAnimation && camera && controls) {
+        const elapsed = performance.now() - cameraAnimation.startTime
+        const t = Math.min(1, elapsed / cameraAnimation.duration)
+        // Smooth quintic ease-in-out
+        const ease = t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2
+
+        camera.position.lerpVectors(cameraAnimation.startCamPos, cameraAnimation.targetCamPos, ease)
+        controls.target.lerpVectors(cameraAnimation.startControlsTarget, cameraAnimation.targetControlsTarget, ease)
+
+        if (t >= 1) {
+          cameraAnimation = null
+        }
+      }
+
       if (controls) {
-        controls.autoRotate = Boolean(props.isAutoRotating)
+        controls.autoRotate = Boolean(props.isAutoRotating) && !cameraAnimation
         controls.autoRotateSpeed = 1.0
         controls.update()
       }
@@ -640,7 +712,6 @@ export const KnowledgeGraph3D: Component<{
 
     const data = props.data
     const dark = props.isDark()
-    const query = (props.searchQuery || "").toLowerCase()
     const filter = props.activeFilter || "all"
 
     // Background color: Deep Obsidian space in dark mode, crisp paper in light mode
@@ -686,14 +757,9 @@ export const KnowledgeGraph3D: Component<{
 
     if (!data.nodes.length) return
 
-    // Filter nodes
+    // Filter nodes by category/kind filter (search highlights & smoothly flies camera)
     const filteredNodes = data.nodes.filter((node) => {
-      const matchKind = filter === "all" || node.data.kind === filter
-      const matchSearch =
-        !query ||
-        node.data.label.toLowerCase().includes(query) ||
-        node.data.path.toLowerCase().includes(query)
-      return matchKind && matchSearch
+      return filter === "all" || node.data.kind === filter
     })
 
     const visibleNodeIds = new Set(filteredNodes.map((n) => n.data.id))

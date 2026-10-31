@@ -70,10 +70,10 @@ export function normalizeForSpeech(text: string): string {
   } catch {}
 
   // 7. Lists, Points and Bullets
-  // Numbered list prefixes (e.g. "1. First step", "2) Second step") -> "Point 1: First step."
-  cleaned = cleaned.replace(/^[\s]*(\d+)[\.\)]\s+/gm, "Point $1: ")
-  // Bullet points (-, *, +, •, ◦, ▪, ▫, ◆, ✓, ✔, ➢, ➤) at start of lines -> "Point: "
-  cleaned = cleaned.replace(/^[\s]*[-*+•◦▪▫◆✓✔➢➤]\s+/gm, "Point: ")
+  // Numbered list prefixes (e.g. "1. First step", "2) Second step") -> "1. First step"
+  cleaned = cleaned.replace(/^[\s]*(\d+)[\.\)]\s+/gm, "$1. ")
+  // Bullet points (-, *, +, •, ◦, ▪, ▫, ◆, ✓, ✔, ➢, ➤) at start of lines -> strip bullet marker so speech flows naturally without saying "Point:"
+  cleaned = cleaned.replace(/^[\s]*[-*+•◦▪▫◆✓✔➢➤]\s+/gm, "")
 
   // 8. Dashes and Hyphens
   // Convert em-dashes (—), en-dashes (–), double/triple hyphens (--) to natural pauses
@@ -83,11 +83,26 @@ export function normalizeForSpeech(text: string): string {
   cleaned = cleaned.replace(/\s+-\s+/g, ", ")
   cleaned = cleaned.replace(/(^|\s)-+(?=\s|$)/gm, "$1, ")
 
-  // 9. Remove emphasis markers
+  // 9. Slashes Removal & Conversions
+  // Slash commands (e.g. /goal, /plan, /compact) -> "goal", "plan"
+  cleaned = cleaned.replace(/(^|\s)\/([a-zA-Z0-9_-]+)/g, "$1$2")
+  // Word alternatives (e.g. and/or, yes/no, read/write) -> "word or word"
+  cleaned = cleaned.replace(/\b([a-zA-Z]+)\/([a-zA-Z]+)\b/g, "$1 or $2")
+  // Remaining slashes (e.g. in paths or symbols) -> replace with space so Kokoro never speaks "slash"
+  cleaned = cleaned.replace(/\//g, " ")
+
+  // 10. Remove emphasis markers
   cleaned = cleaned.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
 
-  // 10. Remove HTML tags
+  // 11. Remove HTML tags
   cleaned = cleaned.replace(/<[^>]+>/g, "")
+
+  // 12. App Name Pronunciation
+  // Pronounce "Whis" as "Whys" (/waɪz/) so it sounds like "wise / whys" rather than "whiss"
+  cleaned = cleaned.replace(/\bWhis\b/g, "Whys")
+  cleaned = cleaned.replace(/\bwhis\b/g, "whys")
+  cleaned = cleaned.replace(/\bWHIS\b/g, "Whys")
+  cleaned = cleaned.replace(/\b[wW]hiss\b/g, "Whys")
 
   // 11. Hardware & GPU models pronunciation (e.g. RTX 4050 -> RTX forty fifty, never "four thousand fifty")
   cleaned = cleaned.replace(

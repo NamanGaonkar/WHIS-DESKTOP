@@ -140,7 +140,7 @@ export function unloadKokoroEngine(): void {
 export function chunkTextForStreaming(text: string): string[] {
   if (!text) return []
 
-  // Split on sentence boundaries: . ! ? followed by space or capital letter/number
+  // 1. Split on sentence boundaries: . ! ? followed by space or capital letter/number and newlines
   const rawSentences = text
     .replace(/([.!?])\s*(?=[A-Z0-9])/g, "$1|SPLIT|")
     .replace(/\n+/g, "|SPLIT|")
@@ -150,16 +150,43 @@ export function chunkTextForStreaming(text: string): string[] {
 
   if (rawSentences.length === 0) return [text.trim()]
 
-  // Never split on commas - splitting on commas creates fragmented ONNX calls with dead air!
-  // Instead, combine very short clauses (< 35 chars) with the next sentence so the audio buffer
-  // is long enough (2+ seconds) to completely overlap the background generation of the next chunk.
+  // 2. Break down long paragraphs or run-on sentences (> 180 chars) on clause boundaries
+  const segments: string[] = []
+  for (const s of rawSentences) {
+    if (s.length <= 180) {
+      segments.push(s)
+    } else {
+      const sub = s
+        .replace(/([;:])\s+/g, "$1|SUB|")
+        .replace(/(,)\s+(?=[a-zA-Z])/g, "$1|SUB|")
+        .split("|SUB|")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0)
+
+      let subBuf = ""
+      for (const piece of sub) {
+        if (!subBuf) {
+          subBuf = piece
+        } else if (subBuf.length + piece.length < 180) {
+          subBuf = `${subBuf} ${piece}`
+        } else {
+          segments.push(subBuf)
+          subBuf = piece
+        }
+      }
+      if (subBuf) segments.push(subBuf)
+    }
+  }
+
+  // 3. Combine short segments (aim for 50-160 chars) so each chunk has enough audio playback
+  // duration to completely overlap and hide background generation of the next chunk.
   const chunks: string[] = []
   let buffer = ""
 
-  for (const s of rawSentences) {
+  for (const s of segments) {
     if (!buffer) {
       buffer = s
-    } else if (buffer.length < 35 || buffer.length + s.length < 100) {
+    } else if (buffer.length < 40 || buffer.length + s.length < 160) {
       buffer = `${buffer} ${s}`
     } else {
       chunks.push(buffer)

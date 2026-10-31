@@ -14,7 +14,7 @@ import { Button } from "@opencode/ui/button"
 import { useTheme } from "@opencode/ui/theme"
 import { useServerSDK } from "@/runtime/server/client"
 import { scanCodebaseGraph, type GraphData, type GraphNode } from "./scanner"
-import { KnowledgeGraph3D } from "./knowledge-graph-3d"
+import { KnowledgeGraph3D, type KnowledgeGraph3DApi } from "./knowledge-graph-3d"
 
 const KIND_COLORS: Record<string, string> = {
   component: "#38bdf8",
@@ -307,16 +307,30 @@ export const CodebaseKnowledgeGraph: Component<{
     matched.connectedEdges().style({ opacity: 0.85 })
   }
 
+  let graph3D: KnowledgeGraph3DApi | null = null
+
   function zoomIn() {
-    cy?.zoom({ level: (cy.zoom() || 1) * 1.3, position: { x: cy.width() / 2, y: cy.height() / 2 } })
+    if (viewMode() === "3d") {
+      graph3D?.zoomIn()
+    } else {
+      cy?.zoom({ level: (cy.zoom() || 1) * 1.3, position: { x: cy.width() / 2, y: cy.height() / 2 } })
+    }
   }
 
   function zoomOut() {
-    cy?.zoom({ level: (cy.zoom() || 1) * 0.7, position: { x: cy.width() / 2, y: cy.height() / 2 } })
+    if (viewMode() === "3d") {
+      graph3D?.zoomOut()
+    } else {
+      cy?.zoom({ level: (cy.zoom() || 1) * 0.7, position: { x: cy.width() / 2, y: cy.height() / 2 } })
+    }
   }
 
   function fitView() {
-    cy?.fit(undefined, 40)
+    if (viewMode() === "3d") {
+      graph3D?.resetView()
+    } else {
+      cy?.fit(undefined, 40)
+    }
   }
 
   function handleAskWhis(node: GraphNode["data"]) {
@@ -543,6 +557,7 @@ export const CodebaseKnowledgeGraph: Component<{
               size="small"
               variant="ghost-muted"
               aria-label="Zoom in"
+              title="Zoom in (+)"
               onClick={zoomIn}
             />
             <IconButton
@@ -550,13 +565,15 @@ export const CodebaseKnowledgeGraph: Component<{
               size="small"
               variant="ghost-muted"
               aria-label="Zoom out"
+              title="Zoom out (-)"
               onClick={zoomOut}
             />
             <IconButton
               icon={<Icon name="expand" size="small" />}
               size="small"
               variant="ghost-muted"
-              aria-label="Fit view"
+              aria-label="Reset view"
+              title="Reset graph position & center"
               onClick={fitView}
             />
             <IconButton
@@ -564,6 +581,7 @@ export const CodebaseKnowledgeGraph: Component<{
               size="small"
               variant="ghost-muted"
               aria-label="Reload graph"
+              title="Reload codebase graph"
               onClick={loadGraph}
             />
           </div>
@@ -595,6 +613,9 @@ export const CodebaseKnowledgeGraph: Component<{
 
         <Show when={viewMode() === "3d"}>
           <KnowledgeGraph3D
+            ref={(api) => {
+              graph3D = api
+            }}
             data={graphData()}
             isDark={isDark}
             selectedNodeId={selectedNode()?.id}

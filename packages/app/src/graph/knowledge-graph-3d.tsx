@@ -18,6 +18,7 @@ import {
   Mesh,
   Group,
   Vector3,
+  Plane,
   Raycaster,
   Vector2,
   LineBasicMaterial,
@@ -321,6 +322,12 @@ function simulate3DForceLayout(
   return result
 }
 
+export interface KnowledgeGraph3DApi {
+  zoomIn: () => void
+  zoomOut: () => void
+  resetView: () => void
+}
+
 export const KnowledgeGraph3D: Component<{
   data: GraphData
   isDark: () => boolean
@@ -328,6 +335,7 @@ export const KnowledgeGraph3D: Component<{
   searchQuery?: string
   activeFilter?: string
   isAutoRotating?: boolean
+  ref?: (api: KnowledgeGraph3DApi) => void
   onSelectNode?: (nodeData: GraphNode["data"] | null) => void
 }> = (props) => {
   let containerRef: HTMLDivElement | undefined
@@ -383,7 +391,46 @@ export const KnowledgeGraph3D: Component<{
     }
   }
 
+  function zoomIn() {
+    if (!camera || !controls) return
+    const dir = new Vector3().subVectors(camera.position, controls.target)
+    dir.multiplyScalar(0.75)
+    if (dir.length() > controls.minDistance) {
+      camera.position.copy(controls.target).add(dir)
+      controls.update()
+    }
+  }
+
+  function zoomOut() {
+    if (!camera || !controls) return
+    const dir = new Vector3().subVectors(camera.position, controls.target)
+    dir.multiplyScalar(1.3)
+    if (dir.length() < controls.maxDistance) {
+      camera.position.copy(controls.target).add(dir)
+      controls.update()
+    }
+  }
+
+  function resetView() {
+    if (!camera || !controls) return
+    cameraAnimation = {
+      startCamPos: camera.position.clone(),
+      targetCamPos: new Vector3(0, 5, 330),
+      startControlsTarget: controls.target.clone(),
+      targetControlsTarget: new Vector3(0, -25, 0),
+      startTime: performance.now(),
+      duration: 750,
+    }
+    props.onSelectNode?.(null)
+  }
+
   onMount(() => {
+    props.ref?.({
+      zoomIn,
+      zoomOut,
+      resetView,
+    })
+
     if (!containerRef) return
 
     const width = containerRef.clientWidth || 800
@@ -565,12 +612,67 @@ export const KnowledgeGraph3D: Component<{
       }
     })
 
+    const dragPlane = new Plane()
+    const planeIntersect = new Vector3()
+    let draggedNodeId: string | null = null
+    let isDraggingNode = false
+
     const onPointerMove = (e: MouseEvent) => {
       if (!containerRef || !camera) return
       const rect = containerRef.getBoundingClientRect()
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
 
+      // 3D Node Dragging logic
+      if (draggedNodeId) {
+        const moveDist = Math.hypot(e.clientX - downPointerX, e.clientY - downPointerY)
+        if (moveDist > 3) {
+          isDraggingNode = true
+        }
+
+        raycaster.setFromCamera(mouse, camera)
+        if (raycaster.ray.intersectPlane(dragPlane, planeIntersect)) {
+          // Update sphere mesh
+          const mesh = nodeMeshes.get(draggedNodeId)
+          if (mesh) mesh.position.copy(planeIntersect)
+
+          // Update recorded position
+          nodePositions.set(draggedNodeId, planeIntersect.clone())
+
+          // Update text sprite label
+          const sprite = nodeSprites.get(draggedNodeId)
+          if (sprite && mesh) {
+            const r = (mesh.geometry as SphereGeometry).parameters.radius || 4
+            sprite.position.set(planeIntersect.x, planeIntersect.y - r - 4.5, planeIntersect.z)
+          }
+
+          // Update halo glow sprite
+          const halo = haloSprites.get(draggedNodeId)
+          if (halo) halo.position.copy(planeIntersect)
+
+          // Update connected edge lines
+          if (edgeLinesMesh) {
+            const posAttr = edgeLinesMesh.geometry.attributes.position as Float32BufferAttribute
+            const arr = posAttr.array as Float32Array
+
+            for (const item of edgeIndexMap) {
+              if (item.src === draggedNodeId) {
+                arr[item.startIndex * 3] = planeIntersect.x
+                arr[item.startIndex * 3 + 1] = planeIntersect.y
+                arr[item.startIndex * 3 + 2] = planeIntersect.z
+              } else if (item.tgt === draggedNodeId) {
+                arr[item.startIndex * 3 + 3] = planeIntersect.x
+                arr[item.startIndex * 3 + 4] = planeIntersect.y
+                arr[item.startIndex * 3 + 5] = planeIntersect.z
+              }
+            }
+            posAttr.needsUpdate = true
+          }
+        }
+        return
+      }
+
+      // Normal hover highlighting when not dragging a node
       raycaster.setFromCamera(mouse, camera)
       const meshes = Array.from(nodeMeshes.values())
       const intersects = raycaster.intersectObjects(meshes)
@@ -599,19 +701,55 @@ export const KnowledgeGraph3D: Component<{
       downPointerX = e.clientX
       downPointerY = e.clientY
       cameraAnimation = null // User took manual control
+
+      if (!containerRef || !camera) return
+      const rect = containerRef.getBoundingClientRect()
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1
+
+      raycaster.setFromCamera(mouse, camera)
+      const meshes = Array.from(nodeMeshes.values())
+      const intersects = raycaster.intersectObjects(meshes)
+
+      if (intersects.length > 0) {
+        const hit = intersects[0].object as Mesh
+        const hitId = hit.userData.nodeId
+        if (hitId && nodePositions.has(hitId)) {
+          draggedNodeId = hitId
+          isDraggingNode = false
+          if (controls) controls.enabled = false
+
+          // Create a drag plane facing the camera coplanar with the node
+          const nodePos = nodePositions.get(hitId)!
+          const camDir = new Vector3()
+          camera.getWorldDirection(camDir).negate()
+          dragPlane.setFromNormalAndCoplanarPoint(camDir, nodePos)
+          containerRef.style.cursor = "move"
+          return
+        }
+      }
+
       if (containerRef) containerRef.style.cursor = "grabbing"
     }
 
     const onPointerUp = () => {
+      if (draggedNodeId) {
+        draggedNodeId = null
+        if (controls) controls.enabled = true
+      }
       if (containerRef) containerRef.style.cursor = "grab"
     }
 
     const onClick = (e: MouseEvent) => {
       if (!containerRef || !camera) return
 
-      // If user dragged to orbit (> 6px movement), ignore click
+      // If user dragged a node or dragged to orbit (> 5px movement), ignore click
       const dragDist = Math.hypot(e.clientX - downPointerX, e.clientY - downPointerY)
-      if (dragDist > 6) return
+      if (dragDist > 5 || isDraggingNode) {
+        isDraggingNode = false
+        return
+      }
+      isDraggingNode = false
 
       const rect = containerRef.getBoundingClientRect()
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1

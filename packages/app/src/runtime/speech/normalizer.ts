@@ -72,10 +72,12 @@ export function normalizeForSpeech(text: string): string {
   } catch {}
 
   // 9. Lists, Points and Bullets
-  // Numbered list prefixes (e.g. "1. First step", "2) Second step") -> "1. First step" (natural pacing)
-  cleaned = cleaned.replace(/^[\s]*(\d+)[\.\)]\s+/gm, "$1. ")
-  // Bullet points (-, *, +, •, ◦, ▪, ▫, ◆, ✓, ✔, ➢, ➤) at start of lines -> strip bullet marker so speech flows naturally without saying "Point:"
-  cleaned = cleaned.replace(/^[\s]*[-*+•◦▪▫◆✓✔➢➤]\s+/gm, "")
+  // Numbered list prefixes (e.g. "1. First step", "2) Second step") -> natural cadence
+  cleaned = cleaned.replace(/^[ \t]*(?:\(?(\d+)[\.\)]|\((\w)\))\s+/gm, "$1. ")
+  // Bullet points (-, *, +, •, ◦, ▪, ▫, ◆, ✓, ✔, ➢, ➤) at start of lines -> strip marker
+  cleaned = cleaned.replace(/^[ \t]*[-*+•◦▪▫◆✓✔➢➤]\s+/gm, "")
+  // Inline bullet separators
+  cleaned = cleaned.replace(/\s+[•◦▪▫◆✓✔➢➤·]\s+/g, ". ")
 
   // 10. Dashes and Hyphens
   // Convert em-dashes (—), en-dashes (–), double/triple hyphens (--) to natural pauses
@@ -93,18 +95,27 @@ export function normalizeForSpeech(text: string): string {
   // Remaining slashes (e.g. in paths or symbols) -> replace with space so Kokoro never speaks "slash"
   cleaned = cleaned.replace(/\//g, " ")
 
-  // 12. Remove emphasis markers (* and _)
+  // 12. Mathematical and Common Symbols
+  cleaned = cleaned.replace(/\s*\+\s*/g, " plus ")
+  cleaned = cleaned.replace(/\s*=\s*/g, " equals ")
+  cleaned = cleaned.replace(/\s*&\s*/g, " and ")
+  cleaned = cleaned.replace(/\s*%\s*/g, " percent ")
+  cleaned = cleaned.replace(/\b(\d+)\s*x\s*(\d+)\b/gi, "$1 by $2")
+  cleaned = cleaned.replace(/\bv(\d+)\.(\d+)(?:\.(\d+))?\b/gi, (_m, major, minor, patch) => {
+    return patch ? `version ${major} point ${minor} point ${patch}` : `version ${major} point ${minor}`
+  })
+
+  // 13. Remove emphasis markers (* and _)
   cleaned = cleaned.replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
 
-  // 13. Remove HTML tags
+  // 14. Remove HTML tags
   cleaned = cleaned.replace(/<[^>]+>/g, "")
 
-  // 14. App Name Pronunciation
-  // Pronounce "Whis" as "Whys" (/waɪz/) so it sounds like "wise / whys" rather than "whiss"
-  cleaned = cleaned.replace(/\bWhis\b/g, "Whys")
-  cleaned = cleaned.replace(/\bwhis\b/g, "whys")
-  cleaned = cleaned.replace(/\bWHIS\b/g, "Whys")
-  cleaned = cleaned.replace(/\b[wW]hiss\b/g, "Whys")
+  // 15. App Name Pronunciation
+  // Pronounce "Whis" cleanly with short 'i' (/wɪs/) as "whiss" / "whis" (never "whys" / "waez")
+  cleaned = cleaned.replace(/\b[wW]hiss+\b/gi, "Whis")
+  cleaned = cleaned.replace(/\bWHIS\b/g, "Whis")
+  cleaned = cleaned.replace(/\b[wW]hys\b/g, "Whis")
 
   // 14. GPU and Hardware Model Pronunciation
   // Pronounce 4-digit GPU models naturally in words (e.g. RTX 4050 -> RTX forty fifty instead of "four thousand fifty")

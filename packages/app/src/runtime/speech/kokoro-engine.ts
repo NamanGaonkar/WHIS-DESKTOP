@@ -140,9 +140,9 @@ export function unloadKokoroEngine(): void {
 export function chunkTextForStreaming(text: string): string[] {
   if (!text) return []
 
-  // 1. Split on sentence boundaries: . ! ? followed by space or capital letter/number and newlines
+  // 1. Split on sentence boundaries: . ! ? followed by space and capital letter/number, and newlines
   const rawSentences = text
-    .replace(/([.!?])\s*(?=[A-Z0-9])/g, "$1|SPLIT|")
+    .replace(/(?<!\b[A-Za-z])([.!?])\s+(?=[A-Z0-9])/g, "$1|SPLIT|")
     .replace(/\n+/g, "|SPLIT|")
     .split("|SPLIT|")
     .map((s) => s.trim())

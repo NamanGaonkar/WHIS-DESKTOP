@@ -110,10 +110,24 @@ export function normalizeForSpeech(text: string): string {
   cleaned = cleaned.replace(/<[^>]+>/g, "")
 
   // 13. App Name Pronunciation
-  // Pronounce "Whis" cleanly with short 'i' (/wɪs/) as "whiss" / "whis" (never "whys" / "waez")
-  cleaned = cleaned.replace(/\b[wW]hiss+\b/gi, "Whis")
-  cleaned = cleaned.replace(/\bWHIS\b/g, "Whis")
-  cleaned = cleaned.replace(/\b[wW]hys\b/g, "Whis")
+  // In eSpeak-NG (Kokoro phonemizer), "Whis" is phonemized as "w'aɪz" ("whys" / "waez").
+  // Substituting with "Whiss" phonemizes cleanly as "w'ɪs" (/wɪs/, rhyming with "bliss" and "miss").
+  cleaned = cleaned.replace(/\b(?:WHIS|Whis|whis|Whys|whys|Whiss|whiss)\b/g, "Whiss")
+
+  // 14. Acronyms & Short Forms Fluency (e.g. IPL, API, CLI, GPU, CPU, LLM)
+  // Ensures acronyms are spoken fluently as connected units (aɪpˈiːˈɛl) rather than "ipple" or paused letters
+  cleaned = cleaned.replace(/\bI\.?P\.?L\.?\b/g, "I-P-L")
+  cleaned = cleaned.replace(/\bA\.?P\.?I\.?\b/g, "A-P-I")
+  cleaned = cleaned.replace(/\bC\.?L\.?I\.?\b/g, "C-L-I")
+  cleaned = cleaned.replace(/\bU\.?R\.?L\.?\b/g, "U-R-L")
+  cleaned = cleaned.replace(/\bG\.?P\.?U\.?s?\b/g, "G-P-U")
+  cleaned = cleaned.replace(/\bC\.?P\.?U\.?s?\b/g, "C-P-U")
+  cleaned = cleaned.replace(/\bL\.?L\.?M\.?s?\b/g, "L-L-M")
+  cleaned = cleaned.replace(/\bT\.?T\.?S\b/g, "T-T-S")
+  cleaned = cleaned.replace(/\bS\.?T\.?T\b/g, "S-T-T")
+  cleaned = cleaned.replace(/\b([A-Z])\.([A-Z])\.([A-Z])?\.?(\s|$)/g, (_m, a, b, c, trail) => {
+    return c ? `${a}-${b}-${c}${trail}` : `${a}-${b}${trail}`
+  })
 
   // 11. Hardware & GPU models pronunciation (e.g. RTX 4050 -> RTX forty fifty, never "four thousand fifty")
   cleaned = cleaned.replace(

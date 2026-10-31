@@ -1,4 +1,45 @@
 import { normalizeForSpeech } from "./normalizer"
+
+function adjustBubbleContrast(el: HTMLElement | null) {
+  if (!el || typeof window === "undefined") return
+
+  const applyContrast = () => {
+    try {
+      let bg = window.getComputedStyle(el).backgroundColor
+      let curr: HTMLElement | null = el
+      while (curr && (bg === "transparent" || bg === "rgba(0, 0, 0, 0)" || !bg)) {
+        curr = curr.parentElement
+        if (curr) bg = window.getComputedStyle(curr).backgroundColor
+      }
+
+      if (!bg || bg === "transparent" || bg === "rgba(0, 0, 0, 0)") return
+
+      const match = bg.match(/\d+(\.\d+)?/g)
+      if (match && match.length >= 3) {
+        const r = parseFloat(match[0])
+        const g = parseFloat(match[1])
+        const b = parseFloat(match[2])
+        // Perceived luminance (ITU-R BT.601)
+        const luminance = (r * 299 + g * 587 + b * 114) / 1000
+        if (luminance > 140) {
+          // Bright/light bubble background -> deep dark high-contrast ink
+          el.style.setProperty("color", "#0e0d0c", "important")
+          el.style.setProperty("--user-message-mention-prefix-color", "#0e0d0c", "important")
+        } else {
+          // Dark bubble background -> crisp bright white
+          el.style.setProperty("color", "#ffffff", "important")
+          el.style.setProperty("--user-message-mention-prefix-color", "#ffffff", "important")
+        }
+      }
+    } catch {}
+  }
+
+  requestAnimationFrame(applyContrast)
+  setTimeout(applyContrast, 100)
+
+  const observer = new MutationObserver(applyContrast)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme"] })
+}
 function formatMessageTime(timestamp: number | undefined, locale: string) {
   if (!timestamp) return ""
   const date = new Date(timestamp)
@@ -422,7 +463,12 @@ export function CurrentUserMessageDisplay(props: {
               </Tooltip>
             </div>
           </Show>
-          <div data-slot="user-message-text" dir="auto" data-comments={comments().length > 0 ? "true" : undefined}>
+          <div
+            ref={adjustBubbleContrast}
+            data-slot="user-message-text"
+            dir="auto"
+            data-comments={comments().length > 0 ? "true" : undefined}
+          >
             <CurrentHighlightedText text={props.text} files={inlineFiles()} agents={agents()} />
             <Show when={comments().length > 0}>
               <UserMessageComments comments={comments()} bounded />
@@ -655,7 +701,7 @@ export function SessionCompactionMessage(props: { message: SessionMessageCompact
       <CompactionDivider label={i18n.t("ui.messagePart.compaction.started")} />
       <Show when={summary().trim()}>
         <div data-component="text-part" data-timeline-part-id={props.message.id}>
-          <div data-slot="text-part-body">
+          <div data-slot="text-part-body" ref={adjustBubbleContrast}>
             <PacedMarkdown
               text={summary()}
               cacheKey={props.message.id}
@@ -766,7 +812,7 @@ export function AssistantTextContent(props: {
             <span class="assistant-bubble-time" data-slot="assistant-bubble-time">{stamp()}</span>
           </Show>
         </div>
-        <div data-slot="text-part-body">
+        <div data-slot="text-part-body" ref={adjustBubbleContrast}>
           <PacedMarkdown text={props.text} cacheKey={props.id} streaming={props.message.time.completed === undefined} />
         </div>
         <Show when={props.showCopy}>

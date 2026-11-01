@@ -17,6 +17,10 @@
 
 ---
 
+## UI Screenshot
+
+![Whis Desktop UI](demo.png)
+
 ## Unified Workspace: Desktop + CLI
 
 > **Unified Chat & Session Continuity:** Whis Desktop and [**Whis CLI**](https://github.com/NamanGaonkar/WHIS---CLi-coder) share a single local database (`~/.local/share/whis/opencode.db`) and state directory. Any chat or coding session started in the terminal CLI immediately appears in Whis Desktop, and any session created in Desktop can be continued in the terminal seamlessly. All BYOK credentials, project history, and context are shared automatically.
